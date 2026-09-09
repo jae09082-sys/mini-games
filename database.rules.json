@@ -1,0 +1,35 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "rankings": {
+      "$game": {
+        "$period": {
+          ".read": true,
+          ".indexOn": [
+            "sort"
+          ],
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid",
+            ".validate": "newData.hasChildren(['name','value','sort','at']) && newData.child('name').isString() && newData.child('name').val().length <= 12 && newData.child('value').isNumber() && newData.child('value').val() >= 0 && newData.child('value').val() <= 86400000 && newData.child('sort').isNumber() && newData.child('at').val() <= now && newData.child('at').val() >= now - 60000 && (($game.beginsWith('mines') && newData.child('sort').val() === newData.child('value').val()) || ($game === 'tetris' && newData.child('sort').val() === -newData.child('value').val()))"
+          }
+        }
+      }
+    },
+    "rooms": {
+      "$code": {
+        ".read": "auth != null",
+        "meta": {
+          ".write": "auth != null && ((!data.exists() && newData.child('host').val() === auth.uid) || data.child('host').val() === auth.uid)",
+          ".validate": "newData.hasChildren(['host','created','round']) && newData.child('host').isString() && newData.child('round').isString() && newData.child('round').val().length <= 40"
+        },
+        "players": {
+          "$slot": {
+            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid && root.child('rooms').child($code).child('meta/round').val() === '') || data.child('uid').val() === auth.uid)",
+            ".validate": "($slot === '0' || $slot === '1' || $slot === '2' || $slot === '3') && newData.child('uid').val() === auth.uid && newData.hasChildren(['name','board','score','dead','sent','round','online']) && newData.child('name').isString() && newData.child('name').val().length <= 12 && newData.child('board').isString() && newData.child('board').val().length === 200 && newData.child('score').isNumber() && newData.child('sent').isNumber() && newData.child('sent').val() >= 0 && newData.child('sent').val() <= 100000 && newData.child('dead').isBoolean() && newData.child('online').isBoolean() && newData.child('round').isString()"
+          }
+        }
+      }
+    }
+  }
+}
