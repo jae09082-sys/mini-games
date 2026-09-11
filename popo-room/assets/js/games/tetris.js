@@ -1,0 +1,60 @@
+// Local play starts immediately; Firebase is loaded separately below.
+let db,ref,set,get,update,onValue,onDisconnect,runTransaction,serverTimestamp,remove;
+let onlineReady=false,connecting=false;
+let ranks={save(){document.querySelector('#ranking').textContent='온라인 랭킹에 연결되지 않았어요. 펫 보상과 놀이 기록은 이 브라우저에 저장됩니다.'}};
+function playerName(){return (document.querySelector('#name').value.trim()||'게스트').slice(0,12)}
+function setupName(){const input=document.querySelector('#name');try{input.value=localStorage.getItem('mini-name')||''}catch{}input.addEventListener('change',()=>{try{localStorage.setItem('mini-name',input.value.slice(0,12))}catch{}})}
+const $=s=>document.querySelector(s),colors=['#14213d','#00d6d6','#4f7cff','#ff9d2e','#ffda3d','#52c96d','#b05cff','#f45b69','#94a3b8'];
+const shapes=[[[1,1,1,1]],[[2,0,0],[2,2,2]],[[0,0,3],[3,3,3]],[[4,4],[4,4]],[[0,5,5],[5,5,0]],[[0,6,0],[6,6,6]],[[7,7,0],[0,7,7]]];
+let board,active,next,bag=[],score=0,lines=0,running=false,dead=false,won=false,sent=0,pending=0,mode='idle',code='',slot='',uid='',room=null,round='',seen={},unsub,disconnect,dirty=true,last=0,locked=false;
+setupName();const blank=()=>Array.from({length:20},()=>Array(10).fill(0));
+function piece(){if(!bag.length){bag=[0,1,2,3,4,5,6];for(let i=6;i>0;i--){const j=Math.floor(Math.random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}}return {m:shapes[bag.pop()].map(r=>r.slice()),x:3,y:0};}
+function collision(p){return p.m.some((r,y)=>r.some((v,x)=>v&&(p.x+x<0||p.x+x>=10||p.y+y>=20||(p.y+y>=0&&board[p.y+y][p.x+x]))));}
+function reset(){board=blank();bag=[];active=piece();next=piece();score=lines=sent=pending=0;dead=false;won=false;running=true;seen={};last=performance.now();dirty=true;const reward=$('#pet-reward');if(reward)reward.textContent='';draw();}
+function matrix(){const m=board.map(r=>r.slice());if(active&&!dead)active.m.forEach((r,y)=>r.forEach((v,x)=>{if(v&&m[y+active.y])m[y+active.y][x+active.x]=v;}));return m;}
+function paint(canvas,m){const ctx=canvas.getContext('2d'),s=canvas.width/m[0].length;ctx.fillStyle=colors[0];ctx.fillRect(0,0,canvas.width,canvas.height);m.forEach((r,y)=>r.forEach((v,x)=>{if(v){ctx.fillStyle=colors[v]||colors[8];ctx.fillRect(x*s+1,y*s+1,s-2,s-2);}}));}
+function draw(){paint($('#tetris'),matrix());if(running){const ghost={...active};while(!collision({...ghost,y:ghost.y+1}))ghost.y++;const ctx=$('#tetris').getContext('2d');ctx.strokeStyle='#d9edff';ctx.lineWidth=2;ctx.setLineDash([4,4]);ghost.m.forEach((r,y)=>r.forEach((v,x)=>{if(v&&ghost.y!==active.y)ctx.strokeRect((x+ghost.x)*30+3,(y+ghost.y)*30+3,24,24);}));ctx.setLineDash([]);}const preview=Array.from({length:3},()=>Array(4).fill(0));next.m.forEach((r,y)=>r.forEach((v,x)=>preview[y][x]=v));paint($('#next'),preview);$('#score').textContent=score;}
+function finish(text,victory=false){if(!running)return;running=false;dead=true;won=victory;stopHold();dispatchEvent(new CustomEvent('pet-result',{detail:{game:'tetris',score,lines}}));dirty=true;$('#tmsg').textContent=text;if(score>0)ranks.save(score);publish();}
+function lock(){active.m.forEach((r,y)=>r.forEach((v,x)=>{if(v)board[y+active.y][x+active.x]=v;}));const keep=board.filter(r=>!r.every(Boolean));const n=20-keep.length;board=[...Array.from({length:n},()=>Array(10).fill(0)),...keep];lines+=n;score+=[0,100,300,500,800][n];let attack=[0,0,1,2,4][n];const cancel=Math.min(pending,attack);pending-=cancel;attack-=cancel;sent+=attack;while(pending>0){if(board.shift().some(Boolean)){board.unshift(Array(10).fill(0));finish('방해 줄에 밀렸어요. 게임 오버!');return;}const hole=Math.floor(Math.random()*10);board.push(Array.from({length:10},(_,i)=>i===hole?0:8));pending--;}active=next;next=piece();if(collision(active))finish('게임 오버!');}
+function action(k){if(!running)return;if(k==='left'||k==='right'){const p={...active,x:active.x+(k==='left'?-1:1)};if(!collision(p))active=p;}else if(k==='rotate'){const m=active.m[0].map((_,i)=>active.m.map(r=>r[i]).reverse());for(const dx of [0,-1,1,-2,2]){const p={...active,m,x:active.x+dx};if(!collision(p)){active=p;break;}}}else if(k==='drop'){while(!collision({...active,y:active.y+1})){active.y++;score+=2;}lock();last=performance.now();}else {if(!collision({...active,y:active.y+1}))active.y++;else lock();}dirty=true;draw();}
+let holdDelay,holdInterval;function stopHold(){clearTimeout(holdDelay);clearInterval(holdInterval);}document.querySelectorAll('[data-key]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();stopHold();b.setPointerCapture(e.pointerId);action(b.dataset.key);if(['left','right','down'].includes(b.dataset.key))holdDelay=setTimeout(()=>holdInterval=setInterval(()=>action(b.dataset.key),80),180);};b.onpointerup=b.onpointercancel=b.onlostpointercapture=stopHold;b.onclick=e=>{if(e.detail===0)action(b.dataset.key);};});addEventListener('blur',stopHold);
+addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))return;const k={ArrowLeft:'left',ArrowRight:'right',ArrowDown:'down',ArrowUp:'rotate',' ':'drop'}[e.key];if(k){e.preventDefault();if(!e.repeat||!['drop','rotate'].includes(k))action(k);}});
+function tick(t){if(running&&t-last>Math.max(150,700-lines*8)){action('down');last=t;}requestAnimationFrame(tick);}board=blank();active=piece();next=piece();draw();requestAnimationFrame(tick);
+
+const own=()=>ref(db,`rooms/${code}/players/${slot}`);
+async function publish(){if(!code||slot===''||mode!=='battle'||locked||!dirty)return;dirty=false;try{await update(own(),{board:matrix().flat().join(''),score,dead,won,sent,round,online:true});}catch(e){dirty=true;$('#net').textContent='동기화 실패: '+e.code;}}
+setInterval(publish,350);
+function stopBattle(message){running=false;mode='idle';dirty=false;stopHold();$('#start').disabled=true;$('#net').textContent=message;$('#tmsg').textContent='배틀이 중단되었습니다. 방을 나가면 다시 시작할 수 있어요.';$('#opponents').replaceChildren();$('#players').textContent='0/4';}
+function renderRoom(v){room=v;if(!v?.meta){stopBattle('방이 종료되었습니다.');return;}const entries=Object.values(v.players||{}).filter(p=>p.online).map(p=>[p.uid,p]);
+ if(!entries.some(([id])=>id===v.meta.host)&&v.meta.host!==uid){stopBattle('방장이 나갔습니다. 방을 나간 뒤 새 방을 만들어 주세요.');return;}
+ $('#players').textContent=entries.length+'/4';
+ if(v.meta.round&&v.meta.round!==round){round=v.meta.round;mode='battle';reset();$('#tmsg').textContent='배틀 시작! 마지막까지 살아남으세요.';publish();}
+ $('#start').disabled=v.meta.host!==uid||entries.length<2||!!(v.meta.round&&entries.some(([,p])=>p.round!==v.meta.round||!p.dead));
+ const box=$('#opponents');box.replaceChildren();entries.forEach(([id,p])=>{if(id===uid)return;const card=document.createElement('div');card.className='opponent';const label=document.createElement('p');label.textContent=p.name+' · '+p.score+'점'+(p.round===round&&p.dead?(p.won===true?' · 승리':' · 탈락'):'');const canvas=document.createElement('canvas');canvas.width=100;canvas.height=200;const b=String(p.board||'0'.repeat(200));paint(canvas,Array.from({length:20},(_,y)=>Array.from({length:10},(_,x)=>Number(b[y*10+x])||0)));card.append(label,canvas);box.append(card);if(running&&p.round===round){const old=seen[id]||0;pending+=Math.max(0,(p.sent||0)-old);seen[id]=p.sent||0;}});
+ if(running&&mode==='battle'&&entries.every(([id,p])=>id===uid||(p.round===round&&p.dead))){finish('🏆 승리! 마지막까지 살아남았어요.',true);}
+}
+async function enter(create){if(!onlineReady||locked||code)return;locked=true;try{let c=create?Array.from(crypto.getRandomValues(new Uint8Array(6)),n=>'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[n%32]).join(''):$('#room').value.trim().toUpperCase();if(!/^[A-Z0-9]{6}$/.test(c))throw Error('6자리 방 코드를 입력하세요.');$('#net').textContent='연결 중…';const meta=ref(db,`rooms/${c}/meta`);if(create){const r=await runTransaction(meta,v=>v?undefined:{host:uid,created:serverTimestamp(),round:''});if(!r.committed)throw Error('방 코드가 겹쳤어요. 다시 시도하세요.');}else{const snap=await get(meta);if(!snap.exists())throw Error('존재하지 않는 방 코드입니다.');if(snap.val().round)throw Error('이미 시작한 방입니다. 새 방으로 참가하세요.');}
+ code=c;mode='lobby';running=false;dead=false;won=false;round='';board=blank();score=sent=0;slot='';for(let i=0;i<4;i++){const candidate=String(i);if((await get(ref(db,`rooms/${c}/players/${candidate}`))).exists())continue;const claim=await runTransaction(ref(db,`rooms/${c}/players/${candidate}`),v=>v?undefined:{uid,name:playerName(),board:'0'.repeat(200),score:0,dead:false,won:false,sent:0,round:'',online:true}).catch(async error=>{if((await get(ref(db,`rooms/${c}/players/${candidate}`))).exists())return {committed:false};throw error;});if(claim.committed){slot=candidate;break;}}if(slot==='')throw Error('방이 가득 찼습니다. 최대 4명까지 참가할 수 있어요.');disconnect=onDisconnect(own());await disconnect.remove();$('#room').value=c;$('#name').disabled=true;$('#host').disabled=$('#join').disabled=true;$('#practice').disabled=true;$('#leave').disabled=false;$('#net').textContent=`방 ${c} · 코드를 친구에게 공유하세요.`;$('#tmsg').textContent='방장이 배틀 시작을 누르면 시작합니다.';unsub=onValue(ref(db,`rooms/${c}`),s=>renderRoom(s.val()),e=>$('#net').textContent='방 읽기 실패: '+e.code);dirty=false;draw();}catch(e){if(code&&slot!=='')await remove(own()).catch(()=>{});code='';slot='';$('#net').textContent=e.message||'참가 실패 (정원 초과 또는 연결 오류)';}finally{locked=false;}}
+$('#host').onclick=()=>enter(true);$('#join').onclick=()=>enter(false);
+$('#start').onclick=async()=>{try{await update(ref(db,`rooms/${code}/meta`),{round:crypto.randomUUID()});}catch(e){$('#net').textContent='시작 실패: '+e.code;}};
+$('#leave').onclick=async()=>{if(locked||!code)return;locked=true;running=false;mode='idle';dirty=false;stopHold();unsub?.();if(room?.meta?.host===uid)await remove(ref(db,`rooms/${code}/meta`)).catch(()=>{});await remove(own()).catch(()=>{});await disconnect?.cancel().catch(()=>{});code='';slot='';room=null;round='';$('#host').disabled=$('#join').disabled=$('#practice').disabled=$('#name').disabled=false;$('#leave').disabled=$('#start').disabled=true;locked=false;$('#net').textContent='방에서 나왔습니다.';$('#tmsg').textContent='연습 또는 방 만들기를 선택하세요.';$('#opponents').replaceChildren();$('#players').textContent='0/4';};
+$('#practice').onclick=()=>{mode='practice';reset();$('#tmsg').textContent='혼자 연습 중';};
+
+async function connectOnline(){
+ if(connecting||code)return;connecting=true;$('#host').disabled=$('#join').disabled=true;$('#reconnect').disabled=true;
+ $('#net').textContent='온라인 연결 중 · 혼자 연습은 바로 시작할 수 있어요.';
+ const slow=setTimeout(()=>{$('#net').textContent='온라인 연결이 지연되고 있어요. 혼자 연습은 계속 이용할 수 있어요.'},8000);
+ try{
+  const api=await import('../services/firebase-client.js');
+  uid=await api.ready.catch(()=>api.retryAuthentication());
+  ({db,ref,set,get,update,onValue,onDisconnect,runTransaction,serverTimestamp,remove}=api);
+  const module=await import('../services/ranking.js');ranks=module.ranking('tetris');
+  onlineReady=true;$('#host').disabled=$('#join').disabled=false;
+  $('#net').textContent='온라인 준비 완료 · 이름을 정하고 방을 만드세요.';
+ }catch{
+  onlineReady=false;$('#net').textContent='온라인 연결이 안 돼요. 혼자 연습과 펫 보상은 이용할 수 있어요.';
+  $('#ranking').textContent='온라인 랭킹은 연결 후 확인할 수 있어요.';
+ }finally{clearTimeout(slow);connecting=false;$('#reconnect').disabled=false}
+}
+$('#reconnect').onclick=connectOnline;
+connectOnline();
