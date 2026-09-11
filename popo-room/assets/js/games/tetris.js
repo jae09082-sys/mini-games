@@ -2,7 +2,7 @@
 let db,ref,set,get,update,onValue,onDisconnect,runTransaction,serverTimestamp,remove;
 let onlineReady=false,connecting=false;
 let ranks={save(){document.querySelector('#ranking').textContent='온라인 랭킹에 연결되지 않았어요. 펫 보상과 놀이 기록은 이 브라우저에 저장됩니다.'}};
-function playerName(){return (document.querySelector('#name').value.trim()||'게스트').slice(0,12)}
+function playerName(){return (globalThis.MalangPlayerName||document.querySelector('#name').value.trim()||'게스트').slice(0,12)}
 function setupName(){const input=document.querySelector('#name');try{input.value=localStorage.getItem('mini-name')||''}catch{}input.addEventListener('change',()=>{try{localStorage.setItem('mini-name',input.value.slice(0,12))}catch{}})}
 const $=s=>document.querySelector(s),colors=['#14213d','#00d6d6','#4f7cff','#ff9d2e','#ffda3d','#52c96d','#b05cff','#f45b69','#94a3b8'];
 const shapes=[[[1,1,1,1]],[[2,0,0],[2,2,2]],[[0,0,3],[3,3,3]],[[4,4],[4,4]],[[0,5,5],[5,5,0]],[[0,6,0],[6,6,6]],[[7,7,0],[0,7,7]]];
@@ -50,7 +50,7 @@ async function connectOnline(){
   ({db,ref,set,get,update,onValue,onDisconnect,runTransaction,serverTimestamp,remove}=api);
   const module=await import('../services/ranking.js');ranks=module.ranking('tetris');
   onlineReady=true;$('#host').disabled=$('#join').disabled=false;
-  $('#net').textContent='온라인 준비 완료 · 이름을 정하고 방을 만드세요.';
+  $('#net').textContent='온라인 준비 완료 · 방을 만들거나 참가하세요.';
  }catch{
   onlineReady=false;$('#net').textContent='온라인 연결이 안 돼요. 혼자 연습과 펫 보상은 이용할 수 있어요.';
   $('#ranking').textContent='온라인 랭킹은 연결 후 확인할 수 있어요.';
@@ -58,3 +58,4 @@ async function connectOnline(){
 }
 $('#reconnect').onclick=connectOnline;
 connectOnline();
+

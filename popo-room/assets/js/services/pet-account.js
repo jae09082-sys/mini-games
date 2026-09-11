@@ -28,9 +28,17 @@ async function connect(user){if(running)return;running=true;connected=false;
   await Popo.attachCloud(api);connected=true;await Popo.flushResults();refresh();if(typeof globalThis.onReturn==='function')await globalThis.onReturn();status('계정 기록 연결 완료 · 변경하면 자동 저장돼요.');
  }catch(error){status(errorMessage(error))}finally{running=false;if(login)login.hidden=connected;if(logout)logout.hidden=!user}
 }
+let resolveAccount,rejectAccount;
+export const accountReady=new Promise((resolve,reject)=>{resolveAccount=resolve;rejectAccount=reject});
+accountReady.catch(()=>{});
 await setPersistence(auth,browserLocalPersistence);
-onAuthStateChanged(auth,connect,error=>status(errorMessage(error)));
-login?.addEventListener('click',async()=>{
+onAuthStateChanged(auth,user=>{
+ globalThis.MalangPlayerName=user?(user.displayName||'말랑 친구').trim().slice(0,12):'';
+ const input=document.querySelector('#name');
+ if(input&&user){input.value=globalThis.MalangPlayerName;input.readOnly=true;input.title='Google 계정 이름으로 참여해요.'}
+ resolveAccount(user);
+ return connect(user);
+},error=>{rejectAccount(error);status(errorMessage(error))});login?.addEventListener('click',async()=>{
  if(popupPending||running)return;
  popupPending=true;login.disabled=true;status('Google 로그인 확인 중…');
  try{
@@ -57,6 +65,8 @@ logout?.addEventListener('click',async()=>{if(running)return;running=true;try{aw
 addEventListener('focus',()=>{if(auth.currentUser&&!running)connect(auth.currentUser)});
 addEventListener('online',()=>{if(!running)connect(auth.currentUser)});
 addEventListener('storage',event=>{if(event.key==='malang-account')location.reload()});
+
+
 
 
 
