@@ -13,7 +13,9 @@ function transport(uid){const target=ref(db,'petProfiles/'+uid);return {
  status,
  async load(){const snapshot=await get(target);return snapshot.val()},
  async commit(revision,data){const result=await runTransaction(target,current=>{
-  if(!current||current.revision!==revision)return;
+  // An empty SDK cache is not a server conflict. Let the server retry
+  // with its current value; existing revision rules still reject creation.
+  if(current!==null&&current.revision!==revision)return;
   return {version:1,revision:revision+1,data};
  },{applyLocally:false});if(!result.committed)throw Error('다른 기기에서 기록이 바뀌었어요. 다시 시도하면 최신 기록을 불러와요.')},
  async ensure(seed){const result=await runTransaction(target,current=>current?undefined:{version:1,revision:1,data:JSON.stringify(seed)},{applyLocally:false});Popo.decodeCloud(result.snapshot.val())}
@@ -55,5 +57,6 @@ logout?.addEventListener('click',async()=>{if(running)return;running=true;try{aw
 addEventListener('focus',()=>{if(auth.currentUser&&!running)connect(auth.currentUser)});
 addEventListener('online',()=>{if(!running)connect(auth.currentUser)});
 addEventListener('storage',event=>{if(event.key==='malang-account')location.reload()});
+
 
 
